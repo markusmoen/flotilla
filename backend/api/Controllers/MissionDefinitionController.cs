@@ -38,19 +38,10 @@ namespace Api.Controllers
             ActionResult<IEnumerable<MissionDefinitionResponse>>
         > GetMissionDefinitions([FromQuery] MissionDefinitionQueryStringParameters parameters)
         {
-            PagedList<MissionDefinition> missionDefinitions;
-            try
-            {
-                missionDefinitions = await missionDefinitionService.ReadAll(
-                    parameters,
-                    readOnly: true
-                );
-            }
-            catch (InvalidDataException e)
-            {
-                logger.LogError(e, "{ErrorMessage}", e.Message);
-                return BadRequest(e.Message);
-            }
+            var missionDefinitions = await missionDefinitionService.ReadAll(
+                parameters,
+                readOnly: true
+            );
 
             var metadata = new
             {
@@ -93,8 +84,7 @@ namespace Api.Controllers
             {
                 return NotFound($"Could not find mission definition with id {id}");
             }
-            var missionDefinitionResponse = new MissionDefinitionResponse(missionDefinition);
-            return Ok(missionDefinitionResponse);
+            return Ok(new MissionDefinitionResponse(missionDefinition));
         }
 
         /// <summary>
@@ -107,12 +97,11 @@ namespace Api.Controllers
         [Route("installation/{installationCode}")]
         [Authorize(Roles = Role.Any)]
         [ProducesResponseType(typeof(IList<MissionDefinitionResponse>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         [ProducesResponseType(StatusCodes.Status502BadGateway)]
-        [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
         public async Task<ActionResult<IList<MissionDefinitionResponse>>> GetAvailableMissions(
             [FromRoute] string installationCode
         )
@@ -124,20 +113,10 @@ namespace Api.Controllers
                     installationCode
                 );
             }
-            catch (InvalidDataException e)
-            {
-                logger.LogError(e, "{ErrorMessage}", e.Message);
-                return BadRequest(e.Message);
-            }
-            catch (HttpRequestException e)
+            catch (Exception e) when (e is HttpRequestException or JsonException)
             {
                 logger.LogError(e, "Error retrieving missions from Mission Loader");
                 return StatusCode(StatusCodes.Status502BadGateway);
-            }
-            catch (JsonException e)
-            {
-                logger.LogError(e, "Error retrieving missions from database");
-                return StatusCode(StatusCodes.Status500InternalServerError);
             }
 
             return Ok(missionDefinitions.Select((m) => new MissionDefinitionResponse(m)));
@@ -151,20 +130,30 @@ namespace Api.Controllers
         /// </remarks>
         [HttpPost]
         [Authorize(Roles = Role.User)]
-        [ProducesResponseType(typeof(MissionDefinition), StatusCodes.Status201Created)]
+        [ProducesResponseType(typeof(MissionDefinitionResponse), StatusCodes.Status201Created)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        [ProducesResponseType(StatusCodes.Status409Conflict)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<MissionDefinition>> Create(
+        public async Task<ActionResult<MissionDefinitionResponse>> Create( //TODO: Not sure about this
             [FromBody] CreateMissionQuery customMissionQuery
         )
         {
             customMissionQuery = Sanitize.SanitizeUserInput(customMissionQuery);
 
-            customMissionQuery.InstallationCode = customMissionQuery.InstallationCode.ToUpper();
+            if (string.IsNullOrWhiteSpace(customMissionQuery.InstallationCode))
+            {
+                return BadRequest("An installation code is required");
+            }
+
+            if (customMissionQuery.Tasks == null || customMissionQuery.Tasks.Count == 0)
+            {
+                return BadRequest("A mission definition must contain at least one task");
+            }
+
+            customMissionQuery.InstallationCode =
+                customMissionQuery.InstallationCode.ToUpperInvariant();
 
             var installation = await installationService.ReadByInstallationCode(
                 customMissionQuery.InstallationCode,
@@ -177,42 +166,34 @@ namespace Api.Controllers
                 );
             }
 
-            if (customMissionQuery.Tasks == null || customMissionQuery.Tasks.Count == 0)
-            {
-                return BadRequest("A mission definition must contain at least one task");
-            }
-
             var missionTasks = customMissionQuery
                 .Tasks.Select((task, index) => new TaskDefinition(task, index + 1))
                 .ToList();
 
-            try
+            var inspectionAreaForMission =
+                await inspectionAreaService.TryFindInspectionAreaForMissionTasks(
+                    missionTasks,
+                    customMissionQuery.InstallationCode
+                );
+            if (inspectionAreaForMission == null)
             {
-                var inspectionAreaForMission =
-                    await inspectionAreaService.TryFindInspectionAreaForMissionTasks(
-                        missionTasks,
-                        customMissionQuery.InstallationCode
-                    );
-                if (inspectionAreaForMission == null)
-                {
-                    return BadRequest("No inspection area found for the mission tasks");
-                }
+                return BadRequest("No inspection area found for the mission tasks");
+            }
 
-                var newMissionDefinition = new MissionDefinition
-                {
-                    Id = Guid.NewGuid().ToString(),
-                    Tasks = missionTasks,
-                    Name = customMissionQuery.Name,
-                    InstallationCode = customMissionQuery.InstallationCode,
-                    InspectionArea = inspectionAreaForMission,
-                };
-                await missionDefinitionService.Create(newMissionDefinition);
-                return Ok(newMissionDefinition);
-            }
-            catch (MultipleInspectionAreasFoundException e)
+            var newMissionDefinition = new MissionDefinition
             {
-                return BadRequest(e.Message);
-            }
+                Id = Guid.NewGuid().ToString(),
+                Tasks = missionTasks,
+                Name = customMissionQuery.Name,
+                InstallationCode = customMissionQuery.InstallationCode,
+                InspectionArea = inspectionAreaForMission,
+            };
+            await missionDefinitionService.Create(newMissionDefinition);
+            return CreatedAtAction(
+                nameof(GetMissionDefinitionWithTasksById),
+                new { id = newMissionDefinition.Id },
+                new MissionDefinitionResponse(newMissionDefinition)
+            );
         }
 
         /// <summary>
@@ -238,9 +219,6 @@ namespace Api.Controllers
             id = Sanitize.SanitizeUserInput(id);
 
             logger.LogInformation("Updating mission definition with id '{Id}'", id);
-
-            if (!ModelState.IsValid)
-                return BadRequest("Invalid data.");
 
             var missionDefinition = await missionDefinitionService.ReadById(id, readOnly: false);
             if (missionDefinition == null)
@@ -280,7 +258,7 @@ namespace Api.Controllers
             }
 
             var newMissionDefinition = await missionDefinitionService.Update(missionDefinition);
-            return new MissionDefinitionResponse(newMissionDefinition);
+            return Ok(new MissionDefinitionResponse(newMissionDefinition));
         }
 
         /// <summary>
@@ -312,11 +290,6 @@ namespace Api.Controllers
                 id
             );
 
-            if (!ModelState.IsValid)
-            {
-                return BadRequest("Invalid data.");
-            }
-
             var missionDefinition = await missionDefinitionService.ReadById(id, readOnly: true);
             if (missionDefinition == null)
             {
@@ -325,7 +298,7 @@ namespace Api.Controllers
             missionDefinition.IsDeprecated = missionDefinitionIsDeprecatedQuery.IsDeprecated;
 
             var newMissionDefinition = await missionDefinitionService.Update(missionDefinition);
-            return new MissionDefinitionResponse(newMissionDefinition);
+            return Ok(new MissionDefinitionResponse(newMissionDefinition));
         }
 
         /// <summary>
@@ -351,8 +324,7 @@ namespace Api.Controllers
             {
                 return NotFound($"Mission definition with id {id} not found");
             }
-            var missionDefinitionResponse = new MissionDefinitionResponse(missionDefinition);
-            return Ok(missionDefinitionResponse);
+            return Ok(new MissionDefinitionResponse(missionDefinition));
         }
 
         /// <summary>
@@ -361,7 +333,8 @@ namespace Api.Controllers
         [HttpPut]
         [Authorize(Roles = Role.User)]
         [Route("{missionDefinitionId}/skip-auto-mission")]
-        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -394,6 +367,7 @@ namespace Api.Controllers
             }
             catch (ArgumentException e)
             {
+                logger.LogWarning(e, "Invalid time of day for skipping auto scheduled mission");
                 return BadRequest(e.Message);
             }
             return NoContent();

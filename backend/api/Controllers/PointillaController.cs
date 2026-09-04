@@ -65,17 +65,10 @@ namespace Api.Controllers
                     );
                 return Ok(pointillaResponse);
             }
-            catch (JsonException e)
-            {
-                logger.LogError(e, "Invalid JSON response from Pointilla");
-                return BadRequest($"Invalid JSON response from Pointilla");
-            }
-            catch (Exception e)
+            catch (Exception e) when (e is HttpRequestException or JsonException)
             {
                 logger.LogError(e, "Error during GET of map from Pointilla");
-                return BadRequest(
-                    $"Could not retrieve map for plant {plantCode} floor {floorId} from Pointilla"
-                );
+                return StatusCode(StatusCodes.Status502BadGateway);
             }
         }
 
@@ -116,16 +109,10 @@ namespace Api.Controllers
                     );
                 return File(pointillaResponse, "image/png");
             }
-            catch (JsonException)
+            catch (Exception e) when (e is HttpRequestException or JsonException)
             {
-                return BadRequest($"Invalid JSON response from Pointilla");
-            }
-            catch (Exception e)
-            {
-                logger.LogError(e, "Error during GET of map from Pointilla");
-                return BadRequest(
-                    $"Could not retrieve map for plant {plantCode} floor {floorId} from Pointilla"
-                );
+                logger.LogError(e, "Error during GET of map tiles from Pointilla");
+                return StatusCode(StatusCodes.Status502BadGateway);
             }
         }
     }

@@ -27,7 +27,7 @@ namespace Api.Controllers
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<IList<Installation>>> GetAccessRoles()
+        public async Task<ActionResult<IList<AccessRole>>> GetAccessRoles()
         {
             try
             {
@@ -36,12 +36,8 @@ namespace Api.Controllers
             }
             catch (HttpRequestException e)
             {
-                return StatusCode(StatusCodes.Status403Forbidden, e.Message);
-            }
-            catch (Exception e)
-            {
-                logger.LogError(e, "Error during GET of access roles from database");
-                throw;
+                logger.LogWarning(e, "Unauthorized attempt to read access roles");
+                return StatusCode(StatusCodes.Status403Forbidden);
             }
         }
 
@@ -57,6 +53,7 @@ namespace Api.Controllers
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<AccessRole>> Create(
             [FromBody] CreateAccessRoleQuery accessRoleQuery
@@ -100,12 +97,8 @@ namespace Api.Controllers
             }
             catch (HttpRequestException e)
             {
-                return StatusCode(StatusCodes.Status403Forbidden, e.Message);
-            }
-            catch (Exception e)
-            {
-                logger.LogError(e, "Error while creating new access role");
-                throw;
+                logger.LogWarning(e, "Unauthorized attempt to create an access role");
+                return StatusCode(StatusCodes.Status403Forbidden);
             }
         }
     }

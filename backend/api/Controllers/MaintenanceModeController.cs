@@ -23,7 +23,6 @@ namespace Api.Controllers
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        [ProducesResponseType(StatusCodes.Status409Conflict)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult> SetMaintenanceMode([FromRoute] string robotId)
         {
@@ -36,16 +35,7 @@ namespace Api.Controllers
                 return NotFound();
             }
 
-            try
-            {
-                await isarService.SetMaintenanceMode(robot.IsarUri);
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Failed to set maintenance mode for robot {RobotId}", robot.Id);
-                return StatusCode(StatusCodes.Status500InternalServerError);
-            }
-
+            await isarService.SetMaintenanceMode(robot.IsarUri);
             return NoContent();
         }
 
@@ -58,7 +48,6 @@ namespace Api.Controllers
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        [ProducesResponseType(StatusCodes.Status409Conflict)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult> ReleaseMaintenanceMode([FromRoute] string robotId)
         {
@@ -71,20 +60,7 @@ namespace Api.Controllers
                 return NotFound();
             }
 
-            try
-            {
-                await isarService.ReleaseMaintenanceMode(robot.IsarUri);
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(
-                    ex,
-                    "Failed to release maintenance mode for robot {RobotId}",
-                    robot.Id
-                );
-                return StatusCode(StatusCodes.Status500InternalServerError);
-            }
-
+            await isarService.ReleaseMaintenanceMode(robot.IsarUri);
             return NoContent();
         }
     }

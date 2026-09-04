@@ -34,17 +34,8 @@ namespace Api.Controllers
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<IList<RobotResponse>>> GetRobots()
         {
-            try
-            {
-                var robots = await robotService.ReadAll(readOnly: true);
-                var robotResponses = robots.Select(robot => new RobotResponse(robot));
-                return Ok(robotResponses);
-            }
-            catch (Exception e)
-            {
-                logger.LogError(e, "Error during GET of robots  from database");
-                throw;
-            }
+            var robots = await robotService.ReadAll(readOnly: true);
+            return Ok(robots.Select(robot => new RobotResponse(robot)));
         }
 
         /// <summary>
@@ -57,6 +48,7 @@ namespace Api.Controllers
         [Route("installation-code/{installationCode}")]
         [Authorize(Roles = Role.Any)]
         [ProducesResponseType(typeof(IList<RobotResponse>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
@@ -64,20 +56,11 @@ namespace Api.Controllers
             string installationCode
         )
         {
-            try
-            {
-                var robots = await robotService.ReadRobotsForInstallation(
-                    installationCode,
-                    readOnly: true
-                );
-                var robotResponses = robots.Select(robot => new RobotResponse(robot));
-                return Ok(robotResponses);
-            }
-            catch (Exception e)
-            {
-                logger.LogError(e, "Error during GET of robots  from database");
-                throw;
-            }
+            var robots = await robotService.ReadRobotsForInstallation(
+                installationCode,
+                readOnly: true
+            );
+            return Ok(robots.Select(robot => new RobotResponse(robot)));
         }
 
         /// <summary>
@@ -90,6 +73,7 @@ namespace Api.Controllers
         [Authorize(Roles = Role.Any)]
         [Route("{id}")]
         [ProducesResponseType(typeof(RobotResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -99,24 +83,15 @@ namespace Api.Controllers
             id = Sanitize.SanitizeUserInput(id);
 
             logger.LogInformation("Getting robot with id={Id}", id);
-            try
-            {
-                var robot = await robotService.ReadById(id, readOnly: true);
-                if (robot == null)
-                {
-                    logger.LogWarning("Could not find robot with id={Id}", id);
-                    return NotFound();
-                }
 
-                var robotResponse = new RobotResponse(robot);
-                logger.LogInformation("Successful GET of robot with id={id}", id);
-                return Ok(robotResponse);
-            }
-            catch (Exception e)
+            var robot = await robotService.ReadById(id, readOnly: true);
+            if (robot == null)
             {
-                logger.LogError(e, "Error during GET of robot with id={Id}", id);
-                throw;
+                logger.LogWarning("Could not find robot with id={Id}", id);
+                return NotFound();
             }
+
+            return Ok(new RobotResponse(robot));
         }
 
         /// <summary>
@@ -139,23 +114,14 @@ namespace Api.Controllers
             robotQuery = Sanitize.SanitizeUserInput(robotQuery);
 
             logger.LogInformation("Creating new robot");
-            try
-            {
-                var newRobot = await robotService.CreateFromQuery(robotQuery);
-                var robotResponses = new RobotResponse(newRobot);
 
-                logger.LogInformation("Successfully created new robot");
-                return CreatedAtAction(
-                    nameof(GetRobotById),
-                    new { id = newRobot.Id },
-                    robotResponses
-                );
-            }
-            catch (Exception e)
-            {
-                logger.LogError(e, "Error while creating new robot");
-                throw;
-            }
+            var newRobot = await robotService.CreateFromQuery(robotQuery);
+            logger.LogInformation("Successfully created new robot");
+            return CreatedAtAction(
+                nameof(GetRobotById),
+                new { id = newRobot.Id },
+                new RobotResponse(newRobot)
+            );
         }
 
         /// <summary>
@@ -173,7 +139,6 @@ namespace Api.Controllers
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<RobotResponse>> UpdateRobot(
             [FromRoute] string id,
@@ -184,30 +149,15 @@ namespace Api.Controllers
 
             logger.LogInformation("Updating robot with id={Id}", id);
 
-            if (!ModelState.IsValid)
-            {
-                return BadRequest("Invalid data");
-            }
-
             if (id != robot.Id)
             {
                 logger.LogWarning("Id: {Id} not corresponding to updated robot", id);
                 return BadRequest("Inconsistent Id");
             }
 
-            try
-            {
-                await robotService.Update(robot);
-                var robotResponse = new RobotResponse(robot);
-                logger.LogInformation("Successful PUT of robot to database");
-
-                return Ok(robotResponse);
-            }
-            catch (Exception e)
-            {
-                logger.LogError(e, "Error while updating robot with id={Id}", id);
-                throw;
-            }
+            await robotService.Update(robot);
+            logger.LogInformation("Successful PUT of robot to database");
+            return Ok(new RobotResponse(robot));
         }
 
         /// <summary>
@@ -239,39 +189,24 @@ namespace Api.Controllers
 
             logger.LogInformation("Updating robot with id={Id}", id);
 
-            if (!ModelState.IsValid)
-                return BadRequest("Invalid data");
-
-            try
+            var robot = await robotService.ReadById(id, readOnly: true);
+            if (robot == null)
             {
-                var robot = await robotService.ReadById(id, readOnly: true);
-                if (robot == null)
-                {
-                    string errorMessage = $"No robot with id: {id} could be found";
-                    logger.LogError("{Message}", errorMessage);
-                    return NotFound(errorMessage);
-                }
-
-                switch (fieldName)
-                {
-                    case "missionId":
-                        await robotService.UpdateCurrentMissionId(id, query.MissionId);
-                        robot.CurrentMissionId = query.MissionId;
-                        break;
-                    default:
-                        return NotFound($"Could not find any field with name {fieldName}");
-                }
-
-                var robotResponse = new RobotResponse(robot);
-                logger.LogInformation("Successful PUT of robot to database");
-
-                return Ok(robotResponse);
+                return NotFound($"No robot with id: {id} could be found");
             }
-            catch (Exception e)
+
+            switch (fieldName)
             {
-                logger.LogError(e, "Error while updating robot with id={Id}", id);
-                throw;
+                case "missionId":
+                    await robotService.UpdateCurrentMissionId(id, query.MissionId);
+                    robot.CurrentMissionId = query.MissionId;
+                    break;
+                default:
+                    return NotFound($"Could not find any field with name {fieldName}");
             }
+
+            logger.LogInformation("Successful PUT of robot to database");
+            return Ok(new RobotResponse(robot));
         }
 
         /// <summary>
@@ -303,29 +238,17 @@ namespace Api.Controllers
                 deprecated
             );
 
-            try
+            var robot = await robotService.ReadById(id, readOnly: true);
+            if (robot == null)
             {
-                var robot = await robotService.ReadById(id, readOnly: true);
-                if (robot == null)
-                {
-                    string errorMessage = $"No robot with id: {id} could be found";
-                    logger.LogError("{Message}", errorMessage);
-                    return NotFound(errorMessage);
-                }
-
-                await robotService.UpdateDeprecated(id, deprecated);
-                robot.Deprecated = deprecated;
-
-                var robotResponse = new RobotResponse(robot);
-                logger.LogInformation("Successful updated deprecated on robot to database");
-
-                return Ok(robotResponse);
+                return NotFound($"No robot with id: {id} could be found");
             }
-            catch (Exception e)
-            {
-                logger.LogError(e, "Error while updating robot with id={Id}", id);
-                throw;
-            }
+
+            await robotService.UpdateDeprecated(id, deprecated);
+            robot.Deprecated = deprecated;
+
+            logger.LogInformation("Successful updated deprecated on robot to database");
+            return Ok(new RobotResponse(robot));
         }
 
         /// <summary>
@@ -358,36 +281,21 @@ namespace Api.Controllers
                 id
             );
 
-            try
+            var robot = await robotService.ReadById(id);
+            if (robot == null)
             {
-                var robot = await robotService.ReadById(id);
-                if (robot == null)
-                {
-                    string errorMessage = $"No robot with id: {id} could be found";
-                    logger.LogError("{Message}", errorMessage);
-                    return NotFound(errorMessage);
-                }
-
-                var inspectionArea = await inspectionAreaService.ReadById(currentInspectionAreaId);
-
-                if (inspectionArea == null)
-                    return NotFound(
-                        $"No inspection area with ID {currentInspectionAreaId} was found"
-                    );
-
-                await robotService.UpdateCurrentInspectionAreaId(id, inspectionArea.Id);
-                robot.CurrentInspectionAreaId = inspectionArea.Id;
-
-                var robotResponse = new RobotResponse(robot);
-                logger.LogInformation("Successful updated current inspection area on robot");
-
-                return Ok(robotResponse);
+                return NotFound($"No robot with id: {id} could be found");
             }
-            catch (Exception e)
-            {
-                logger.LogError(e, "Error while updating robot with id={Id}", id);
-                throw;
-            }
+
+            var inspectionArea = await inspectionAreaService.ReadById(currentInspectionAreaId);
+            if (inspectionArea == null)
+                return NotFound($"No inspection area with ID {currentInspectionAreaId} was found");
+
+            await robotService.UpdateCurrentInspectionAreaId(id, inspectionArea.Id);
+            robot.CurrentInspectionAreaId = inspectionArea.Id;
+
+            logger.LogInformation("Successful updated current inspection area on robot");
+            return Ok(new RobotResponse(robot));
         }
 
         /// <summary>
@@ -442,44 +350,27 @@ namespace Api.Controllers
 
             logger.LogInformation("Updating robot status with id={Id}", id);
 
-            if (!ModelState.IsValid)
-                return BadRequest("Invalid data");
-
             var robot = await robotService.ReadById(id, readOnly: true);
             if (robot == null)
             {
-                string errorMessage = $"No robot with id: {id} could be found";
-                logger.LogError("{Message}", errorMessage);
-                return NotFound(errorMessage);
+                return NotFound($"No robot with id: {id} could be found");
             }
 
-            try
+            await robotService.UpdateRobotStatus(id, robotStatus);
+            robot.Status = robotStatus;
+            logger.LogInformation("Successfully updated robot {RobotId}", robot.Id);
+
+            var startMissionStatuses = new List<RobotStatus>
             {
-                await robotService.UpdateRobotStatus(id, robotStatus);
-                robot.Status = robotStatus;
-                logger.LogInformation("Successfully updated robot {RobotId}", robot.Id);
+                RobotStatus.Available,
+                RobotStatus.Home,
+                RobotStatus.ReturnHomePaused,
+                RobotStatus.ReturningHome,
+            };
+            if (startMissionStatuses.Contains(robotStatus))
+                eventAggregatorSingletonService.Publish(new RobotReadyForMissionsEventArgs(robot));
 
-                var robotResponse = new RobotResponse(robot);
-
-                var startMissionStatuses = new List<RobotStatus>
-                {
-                    RobotStatus.Available,
-                    RobotStatus.Home,
-                    RobotStatus.ReturnHomePaused,
-                    RobotStatus.ReturningHome,
-                };
-                if (startMissionStatuses.Contains(robotStatus))
-                    eventAggregatorSingletonService.Publish(
-                        new RobotReadyForMissionsEventArgs(robot)
-                    );
-
-                return Ok(robotResponse);
-            }
-            catch (Exception e)
-            {
-                logger.LogError(e, "Error while updating status for robot with id={Id}", id);
-                throw;
-            }
+            return Ok(new RobotResponse(robot));
         }
 
         /// <summary>
@@ -627,6 +518,7 @@ namespace Api.Controllers
             try
             {
                 await isarService.ResumeMission(robot);
+                return NoContent();
             }
             catch (HttpRequestException e)
             {
@@ -646,8 +538,6 @@ namespace Api.Controllers
                 logger.LogError(e, "{Message}", Message);
                 return StatusCode(StatusCodes.Status500InternalServerError, Message);
             }
-
-            return NoContent();
         }
 
         /// <summary>
@@ -678,6 +568,7 @@ namespace Api.Controllers
             try
             {
                 await isarService.ReleaseInterventionNeeded(robot.IsarUri);
+                return NoContent();
             }
             catch (IsarCommunicationException e)
             {
@@ -698,8 +589,6 @@ namespace Api.Controllers
                 logger.LogError(e, "{Message}", Message);
                 return StatusCode(StatusCodes.Status500InternalServerError, Message);
             }
-
-            return NoContent();
         }
     }
 }

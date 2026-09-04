@@ -28,25 +28,25 @@ namespace Api.Controllers
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<MediaConfig?>> GetMediaStreamConfig([FromRoute] string id)
         {
             id = Sanitize.SanitizeUserInput(id);
 
+            var robot = await robotService.ReadById(id);
+            if (robot == null)
+            {
+                return NotFound($"Could not find robot with ID {id}");
+            }
+
             try
             {
-                var robot = await robotService.ReadById(id);
-                if (robot == null)
-                {
-                    return NotFound($"Could not find robot with ID {id}");
-                }
-
-                var config = await isarService.GetMediaStreamConfig(robot);
-                return Ok(config);
+                return Ok(await isarService.GetMediaStreamConfig(robot));
             }
-            catch (Exception)
+            catch (Exception e)
             {
-                logger.LogWarning("No ISAR media config retrieved from robot with ID {id}", id);
+                logger.LogWarning(e, "No ISAR media config retrieved from robot with ID {id}", id);
                 return NotFound($"No media config retrieved for robot with ID {id}");
             }
         }

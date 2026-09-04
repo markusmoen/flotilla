@@ -1,8 +1,6 @@
 using System.Text.Json;
 using Api.Controllers.Models;
-using Api.Database.Models;
 using Api.Services;
-using Api.Utilities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -10,10 +8,7 @@ namespace Api.Controllers
 {
     [ApiController]
     [Route("missions/tasks")]
-    public class MissionTaskController(
-        ILogger<MissionTaskController> logger,
-        IMissionTaskService missionTaskService
-    ) : ControllerBase
+    public class MissionTaskController(IMissionTaskService missionTaskService) : ControllerBase
     {
         /// <summary>
         ///     List all mission tasks in the Flotilla database
@@ -44,16 +39,7 @@ namespace Api.Controllers
                 return BadRequest("Max EndTime cannot be less than min EndTime");
             }
 
-            PagedList<MissionTask> missionTasks;
-            try
-            {
-                missionTasks = await missionTaskService.ReadAll(parameters);
-            }
-            catch (InvalidDataException e)
-            {
-                logger.LogError(e, "Message: {errorMessage}", e.Message);
-                return BadRequest(e.Message);
-            }
+            var missionTasks = await missionTaskService.ReadAll(parameters);
 
             var metadata = new
             {
