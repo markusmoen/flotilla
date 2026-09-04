@@ -151,12 +151,12 @@ namespace Api.Services
         private void ThrowExceptionIfNotAdmin()
         {
             if (httpContextAccessor.HttpContext == null)
-                throw new HttpRequestException(
+                throw new UnauthorizedAccessException(
                     "Access roles can only be created in authenticated HTTP requests"
                 );
 
             if (!httpContextAccessor.HttpContext.User.IsInRole(SUPER_ADMIN_ROLE_NAME))
-                throw new HttpRequestException(
+                throw new UnauthorizedAccessException(
                     "This user is not authorised to create a new access role"
                 );
         }
@@ -168,7 +168,7 @@ namespace Api.Services
         )
         {
             if (accessLevel == RoleAccessLevel.ADMIN)
-                throw new HttpRequestException("Cannot create admin roles using database services");
+                throw new InvalidDataException("Cannot create admin roles using database services");
             ThrowExceptionIfNotAdmin();
 
             context.Entry(installation).State = EntityState.Unchanged;

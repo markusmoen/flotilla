@@ -29,16 +29,8 @@ namespace Api.Controllers
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<IList<AccessRole>>> GetAccessRoles()
         {
-            try
-            {
-                var accessRoles = await accessRoleService.ReadAll();
-                return Ok(accessRoles);
-            }
-            catch (HttpRequestException e)
-            {
-                logger.LogWarning(e, "Unauthorized attempt to read access roles");
-                return StatusCode(StatusCodes.Status403Forbidden);
-            }
+            var accessRoles = await accessRoleService.ReadAll();
+            return Ok(accessRoles);
         }
 
         /// <summary>
@@ -60,46 +52,39 @@ namespace Api.Controllers
         )
         {
             logger.LogInformation("Creating new access role");
-            try
+
+            var installation = await installationService.ReadByInstallationCode(
+                accessRoleQuery.InstallationCode,
+                readOnly: true
+            );
+            if (installation is null)
             {
-                var installation = await installationService.ReadByInstallationCode(
-                    accessRoleQuery.InstallationCode,
-                    readOnly: true
-                );
-                if (installation is null)
-                {
-                    logger.LogInformation("Installation not found when creating new access roles");
-                    return NotFound("Installation not found");
-                }
+                logger.LogInformation("Installation not found when creating new access roles");
+                return NotFound("Installation not found");
+            }
 
-                var existingAccessRole = await accessRoleService.ReadByInstallation(installation!);
-                if (
-                    existingAccessRole != null
-                    && existingAccessRole.RoleName == accessRoleQuery.RoleName
-                )
-                {
-                    logger.LogInformation(
-                        "An access role for the given installation and role name already exists"
-                    );
-                    return BadRequest("Access role already exists");
-                }
-
-                var newAccessRole = await accessRoleService.Create(
-                    installation,
-                    accessRoleQuery.RoleName,
-                    accessRoleQuery.AccessLevel
-                );
+            var existingAccessRole = await accessRoleService.ReadByInstallation(installation);
+            if (
+                existingAccessRole != null
+                && existingAccessRole.RoleName == accessRoleQuery.RoleName
+            )
+            {
                 logger.LogInformation(
-                    "Succesfully created new access role for installation '{installationCode}'",
-                    installation.InstallationCode
+                    "An access role for the given installation and role name already exists"
                 );
-                return newAccessRole;
+                return BadRequest("Access role already exists");
             }
-            catch (HttpRequestException e)
-            {
-                logger.LogWarning(e, "Unauthorized attempt to create an access role");
-                return StatusCode(StatusCodes.Status403Forbidden);
-            }
+
+            var newAccessRole = await accessRoleService.Create(
+                installation,
+                accessRoleQuery.RoleName,
+                accessRoleQuery.AccessLevel
+            );
+            logger.LogInformation(
+                "Succesfully created new access role for installation '{installationCode}'",
+                installation.InstallationCode
+            );
+            return newAccessRole;
         }
     }
 }

@@ -36,6 +36,9 @@ namespace Api.Utilities
 
                 UnauthorizedAccessException => StatusCodes.Status403Forbidden,
 
+                HttpRequestException => StatusCodes.Status502BadGateway,
+                TeamsNotificationException => StatusCodes.Status502BadGateway,
+
                 _ => StatusCodes.Status500InternalServerError,
             };
 

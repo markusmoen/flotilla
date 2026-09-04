@@ -8,10 +8,8 @@ namespace Api.Controllers
 {
     [ApiController]
     [Route("submit-feedback")]
-    public class FeedbackController(
-        ILogger<FeedbackController> logger,
-        ITeamsNotificationService teamsNotificationService
-    ) : ControllerBase
+    public class FeedbackController(ITeamsNotificationService teamsNotificationService)
+        : ControllerBase
     {
         /// <summary>
         /// Submit feedback to the Flotilla team
@@ -29,20 +27,12 @@ namespace Api.Controllers
         [ProducesResponseType(StatusCodes.Status502BadGateway)]
         public async Task<ActionResult> SubmitFeedback([FromBody] FeedbackQuery feedbackQuery)
         {
-            try
-            {
-                feedbackQuery = Sanitize.SanitizeUserInput(feedbackQuery);
-                await teamsNotificationService.SendTeamsMessageAsync(
-                    feedbackQuery.ToString(),
-                    TeamsDestination.Feedback
-                );
-                return NoContent();
-            }
-            catch (Exception e) when (e is TeamsNotificationException or HttpRequestException)
-            {
-                logger.LogError(e, "Error during POST of feedback");
-                return StatusCode(StatusCodes.Status502BadGateway);
-            }
+            feedbackQuery = Sanitize.SanitizeUserInput(feedbackQuery);
+            await teamsNotificationService.SendTeamsMessageAsync(
+                feedbackQuery.ToString(),
+                TeamsDestination.Feedback
+            );
+            return NoContent();
         }
     }
 }
